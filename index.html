@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Coach Chess</title>
+    <title>Grandmaster AI Chess</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -88,8 +88,8 @@
   "imports": {
     "chess.js": "https://aistudiocdn.com/chess.js@^1.4.0",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1"
   }
 }
 </script>
@@ -119,7 +119,7 @@
                 </div>
                 <div>
                     <div class="font-semibold text-sm">Coach Bot</div>
-                    <div id="ai-level-display" class="text-xs text-gray-400">Level: Medium</div>
+                    <div id="ai-level-display" class="text-xs text-gray-400">Level: Medium (1200)</div>
                 </div>
             </div>
             <!-- Captured White Pieces -->
@@ -182,10 +182,19 @@
               <!-- Difficulty -->
               <div>
                   <label class="text-xs text-gray-400 block mb-2">Difficulty</label>
-                  <div class="grid grid-cols-3 gap-2" id="difficulty-controls">
-                      <button data-level="1" class="difficulty-btn py-2 px-3 text-xs font-medium rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors">Easy</button>
-                      <button data-level="2" class="difficulty-btn py-2 px-3 text-xs font-medium rounded-lg bg-emerald-600 text-white shadow-lg transition-colors">Medium</button>
-                      <button data-level="3" class="difficulty-btn py-2 px-3 text-xs font-medium rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors">Hard</button>
+                  <div class="flex flex-col gap-2" id="difficulty-controls">
+                      <button data-level="1" class="difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors">
+                          <span>Easy</span>
+                          <span class="opacity-60 text-[10px]"></span>
+                      </button>
+                      <button data-level="2" class="difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg bg-emerald-600 text-white shadow-lg transition-colors">
+                          <span>Medium</span>
+                          <span class="opacity-60 text-[10px]"></span>
+                      </button>
+                      <button data-level="3" class="difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors text-purple-300 border border-purple-900/50">
+                          <span>Grandmaster</span>
+                          <span class="opacity-60 text-[10px]"></span>
+                      </button>
                   </div>
               </div>
 
@@ -256,11 +265,35 @@
             return totalEvaluation;
         };
 
+        const orderMoves = (moves) => {
+            return moves.sort((a, b) => {
+                let scoreA = 0; 
+                let scoreB = 0;
+                
+                // Prioritize Captures
+                if (a.includes('x')) scoreA += 10;
+                if (b.includes('x')) scoreB += 10;
+                
+                // Prioritize Checks
+                if (a.includes('+')) scoreA += 5;
+                if (b.includes('+')) scoreB += 5;
+                
+                // Prioritize Promotions
+                if (a.includes('=')) scoreA += 20;
+                if (b.includes('=')) scoreB += 20;
+
+                return scoreB - scoreA;
+            });
+        };
+
         const minimax = (gameInstance, depth, alpha, beta, isMaximizingPlayer) => {
             if (depth === 0 || gameInstance.isGameOver()) {
                 return -evaluateBoard(gameInstance);
             }
-            const moves = gameInstance.moves();
+            
+            let moves = gameInstance.moves();
+            moves = orderMoves(moves);
+
             if (isMaximizingPlayer) {
                 let maxEval = -Infinity;
                 for (const move of moves) {
@@ -289,33 +322,98 @@
         const getBestMove = (gameInstance, difficulty) => {
             const possibleMoves = gameInstance.moves();
             if (possibleMoves.length === 0) return null;
-            if (difficulty === 1 && Math.random() < 0.3) {
-                return possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-            }
-            let bestMove = null;
-            let bestValue = -Infinity;
-            possibleMoves.sort(() => Math.random() - 0.5);
             
-            // Limit depth based on difficulty
-            const searchDepth = difficulty; 
-
-            for (const move of possibleMoves) {
-                gameInstance.move(move);
-                // AI is minimizing white score (so maximizing its own negative score perspective)
-                // Here we simply assume standard minimax where we want the board state best for AI
-                const boardValue = minimax(gameInstance, searchDepth - 1, -100000, 100000, false);
-                gameInstance.undo();
-                if (boardValue > bestValue) {
-                    bestValue = boardValue;
-                    bestMove = move;
+            // --- ELO ~400 (Easy) ---
+            // Simulates a beginner. 
+            // - 60% chance to just play a random legal move (blunder potential).
+            // - 40% chance to look 1 move ahead (capturing pieces if free).
+            if (difficulty === 1) {
+                if (Math.random() < 0.6) {
+                    // Total random blunder
+                    return possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                } else {
+                    // Shallow depth (1 or 2)
+                    const searchDepth = 1;
+                    let bestMove = possibleMoves[0];
+                    let bestValue = -Infinity;
+                    
+                    for (const move of possibleMoves) {
+                        gameInstance.move(move);
+                        const value = -evaluateBoard(gameInstance); // Simple 1-ply search
+                        gameInstance.undo();
+                        // Add randomness to evaluation to simulate misjudgment
+                        const noise = (Math.random() - 0.5) * 50;
+                        if (value + noise > bestValue) {
+                            bestValue = value + noise;
+                            bestMove = move;
+                        }
+                    }
+                    return bestMove;
                 }
             }
-            return bestMove || possibleMoves[0];
+
+            // --- ELO Settings for Medium & GM ---
+            
+            // Search Depth
+            // Medium (1200): Depth 3 (Solid club player)
+            // GM (2800): Depth 4 (Deep calculation, considering JS performance)
+            const searchDepth = difficulty === 3 ? 4 : 3;
+            
+            // Analyze moves
+            let rankedMoves = [];
+            const sortedMoves = orderMoves(possibleMoves);
+
+            // Time management check (simplified for this context)
+            const startTime = Date.now();
+
+            for (const move of sortedMoves) {
+                gameInstance.move(move);
+                // Minimax
+                const boardValue = minimax(gameInstance, searchDepth - 1, -100000, 100000, false);
+                gameInstance.undo();
+                
+                rankedMoves.push({ move, value: boardValue });
+
+                // Bail out if taking too long (UX safety)
+                if (Date.now() - startTime > 1500 && difficulty !== 3) break;
+            }
+
+            // Sort best to worst
+            rankedMoves.sort((a, b) => b.value - a.value);
+            
+            if (rankedMoves.length === 0) return possibleMoves[0];
+
+            const bestValue = rankedMoves[0].value;
+            
+            // --- ELO 2800 (Grandmaster) ---
+            // Always picks the Top 1 move. Ruthless.
+            if (difficulty === 3) {
+                return rankedMoves[0].move;
+            }
+
+            // --- ELO 1200 (Medium) ---
+            // "Human-like" tolerance.
+            // Doesn't necessarily pick the #1 engine move if #2 or #3 are close enough in score.
+            // Tolerance 40cp (centipawns).
+            const tolerance = 40; 
+            const goodMoves = rankedMoves.filter(m => m.value >= bestValue - tolerance);
+            
+            // Small chance (10%) to pick from a wider pool (small mistake)
+            if (Math.random() < 0.1 && rankedMoves.length > 1) {
+                return rankedMoves[1].move;
+            }
+
+            // Pick random from "good" moves
+            return goodMoves[Math.floor(Math.random() * goodMoves.length)].move;
         };
 
         // --- GEMINI SERVICES ---
 
         let aiClient = null;
+        let apiQuotaExceeded = false;
+        let lastApiCallTime = 0;
+        const API_COOLDOWN = 8000; // Increased cooldown to prevent rapid fire
+
         const getAIClient = () => {
             if (!aiClient && process.env.API_KEY) {
                 aiClient = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -323,10 +421,39 @@
             return aiClient;
         };
 
+        const checkQuotaError = (error) => {
+            if (!error) return false;
+            
+            // Check structured Gemini/Google errors
+            if (error.status === 429 || error.code === 429) return true;
+            if (error.error && (error.error.code === 429 || error.error.status === "RESOURCE_EXHAUSTED")) return true;
+            
+            // Check string messages
+            const errStr = error.toString();
+            const errMsg = error.message || "";
+            if (errStr.includes("429") || errMsg.includes("429") || errMsg.includes("Quota") || errMsg.includes("RESOURCE_EXHAUSTED")) {
+                return true;
+            }
+            
+            // Check stringified JSON
+            try {
+                if (JSON.stringify(error).includes("RESOURCE_EXHAUSTED")) return true;
+            } catch(e) {}
+
+            return false;
+        };
+
         const getGameCommentary = async (fen, lastMove, history) => {
+            if (apiQuotaExceeded) return "The Grandmaster is taking a coffee break (Quota limit).";
+            
+            const now = Date.now();
+            if (now - lastApiCallTime < API_COOLDOWN) return "Hmm...";
+
             const client = getAIClient();
             if (!client) return "Gemini API Key missing.";
+            
             try {
+                lastApiCallTime = now;
                 const prompt = `
                     You are a witty, sarcastic, yet insightful Chess Grandmaster commentator.
                     Current Board FEN: ${fen}
@@ -341,21 +468,46 @@
                 return response.text || "Analyzing position...";
             } catch (error) {
                 console.error("Gemini Error:", error);
+                
+                if (checkQuotaError(error)) {
+                     apiQuotaExceeded = true;
+                     setTimeout(() => apiQuotaExceeded = false, 120000); // 2 minute timeout
+                     return "I need a long break. (Quota Limit Reached).";
+                }
                 return "The Grandmaster is silent.";
             }
         };
 
-        const getHint = async (fen, turn) => {
+        const getHint = async (fen, turn, bestMoveSan) => {
+            if (apiQuotaExceeded) return "Coach is resting (Quota limit).";
+
             const client = getAIClient();
             if (!client) return "Gemini API Key missing.";
             try {
-                const prompt = `You are a Chess Coach. FEN: ${fen}. Turn: ${turn === 'w' ? 'White' : 'Black'}. Suggest 1 strategic idea under 30 words.`;
+                const prompt = `
+                    You are a Chess Coach. 
+                    The Board FEN is: ${fen}. 
+                    It is ${turn === 'w' ? 'White' : 'Black'}'s turn.
+                    
+                    The Engine calculates the best move is: "${bestMoveSan}".
+                    
+                    Give the player a hint to find this move (or a similar good idea). 
+                    Do NOT explicitly name the square or piece if possible, describe the idea (e.g. "Control the open file", "Look at the weak pawn").
+                    If it's a tactic, say "Look for a tactic".
+                    Keep it under 30 words.
+                `;
                 const response = await client.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: prompt,
                 });
-                return response.text || "Control the center.";
+                return response.text || "Try to control the center.";
             } catch (error) {
+                console.error("Gemini Error (Hint):", error);
+                if (checkQuotaError(error)) {
+                     apiQuotaExceeded = true;
+                     setTimeout(() => apiQuotaExceeded = false, 120000);
+                     return "Quota exceeded. Try again later.";
+                }
                 return "Develop your pieces.";
             }
         };
@@ -366,7 +518,7 @@
         let game = new Chess(INITIAL_FEN);
         let playerSide = 'w';
         let boardOrientation = 'w';
-        let difficulty = 2; // 1: Easy, 2: Medium, 3: Hard
+        let difficulty = 2; // 1: Easy, 2: Medium, 3: Hard/GM
         let selectedSquare = null;
         let possibleMoves = [];
         let lastMove = null;
@@ -391,7 +543,8 @@
             // Difficulty
             document.querySelectorAll('.difficulty-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const level = parseInt(e.currentTarget.getAttribute('data-level') || '2');
+                    const btnElement = e.currentTarget;
+                    const level = parseInt(btnElement.getAttribute('data-level') || '2');
                     setDifficulty(level);
                 });
             });
@@ -428,18 +581,35 @@
             difficulty = level;
             document.querySelectorAll('.difficulty-btn').forEach(btn => {
                 const btnLevel = parseInt(btn.getAttribute('data-level') || '0');
+                
+                // Reset basic styles
+                let baseClass = "difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg transition-colors ";
+                
                 if (btnLevel === level) {
-                    btn.className = 'difficulty-btn py-2 px-3 text-xs font-medium rounded-lg bg-emerald-600 text-white shadow-lg transition-colors';
+                    // Active State
+                    btn.className = baseClass + "bg-emerald-600 text-white shadow-lg";
                 } else {
-                    btn.className = 'difficulty-btn py-2 px-3 text-xs font-medium rounded-lg bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors';
+                    // Inactive State
+                    btn.className = baseClass + "bg-gray-700 text-gray-400 hover:bg-gray-600";
+                }
+                
+                // Special GM styling
+                if (btnLevel === 3) {
+                     if (btnLevel === level) {
+                        btn.className = "difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg bg-purple-600 text-white shadow-lg shadow-purple-900/50 transition-colors border border-purple-400";
+                     } else {
+                        btn.className = "difficulty-btn w-full flex justify-between items-center py-2 px-3 text-xs font-medium rounded-lg bg-gray-800 text-purple-400 border border-purple-900/50 hover:bg-gray-700 transition-colors";
+                     }
                 }
             });
-            let levelName = level === 1 ? 'Easy' : (level === 3 ? 'Hard' : 'Medium');
+            let levelName = level === 1 ? 'Easy (400)' : (level === 3 ? 'Grandmaster (2800)' : 'Medium (1200)');
             aiLevelDisplayEl.textContent = `Level: ${levelName}`;
+            
+            aiLevelDisplayEl.classList.add('animate-pulse');
+            setTimeout(() => aiLevelDisplayEl.classList.remove('animate-pulse'), 500);
         }
 
         function handleSquareClick(square) {
-            // Player can only move if: Game Active AND AI not thinking AND it's Player's turn
             if (game.isGameOver() || isAiThinking || game.turn() !== playerSide) return;
 
             if (selectedSquare === square) {
@@ -455,7 +625,6 @@
                 clearSelection();
             } else {
                 const piece = game.get(square);
-                // Can only select own pieces
                 if (piece && piece.color === game.turn() && piece.color === playerSide) {
                     selectedSquare = square;
                     possibleMoves = game.moves({ square: square, verbose: true }).map(m => m.to);
@@ -481,9 +650,12 @@
                 renderBoard();
                 updateUI();
                 
-                getGameCommentary(game.fen(), move.san, game.history()).then(text => {
-                    commentaryEl.textContent = `"${text}"`;
-                });
+                const now = Date.now();
+                if (now - lastApiCallTime > API_COOLDOWN) {
+                     getGameCommentary(game.fen(), move.san, game.history()).then(text => {
+                        commentaryEl.textContent = `"${text}"`;
+                    });
+                }
 
                 if (!game.isGameOver()) {
                     isAiThinking = true;
@@ -499,11 +671,12 @@
             if (game.isGameOver()) return;
 
             const bestMoveSan = getBestMove(game, difficulty);
+            
             if (bestMoveSan) {
                 const move = game.move(bestMoveSan);
                 lastMove = { from: move.from, to: move.to };
                 
-                if (Math.random() > 0.6) {
+                if (Math.random() > 0.7) {
                      getGameCommentary(game.fen(), move.san, game.history()).then(text => {
                         commentaryEl.textContent = `"${text}"`;
                     });
@@ -518,9 +691,24 @@
 
         async function handleHint() {
             if (game.isGameOver()) return;
-            commentaryEl.textContent = "Coach is analyzing...";
-            const hint = await getHint(game.fen(), game.turn());
+            
+            const btnHint = document.getElementById('btn-hint');
+            const originalText = btnHint.textContent;
+            btnHint.textContent = "Thinking...";
+            btnHint.disabled = true;
+            
+            commentaryEl.textContent = "Coach is analyzing the position...";
+            
+            // 1. Ask Engine for best move (Depth 3 for quick but accurate result)
+            const bestMoveSan = getBestMove(game, 3); // Force decent depth
+            
+            // 2. Ask Gemini to generate hint based on that move
+            const hint = await getHint(game.fen(), game.turn(), bestMoveSan);
+            
             commentaryEl.textContent = `Coach Hint: "${hint}"`;
+            
+            btnHint.textContent = originalText;
+            btnHint.disabled = false;
         }
 
         function resetGame() {
@@ -531,7 +719,6 @@
             renderBoard();
             updateUI();
 
-            // If Player is Black, AI (White) moves first
             if (playerSide === 'b' && game.turn() === 'w') {
                 isAiThinking = true;
                 thinkingEl.classList.remove('hidden');
@@ -582,7 +769,6 @@
                     cell.className = classes.join(' ');
                     cell.onclick = () => handleSquareClick(squareId);
 
-                    // Rank/File Labels
                     if (col === (boardOrientation === 'w' ? 0 : 7)) {
                         const rankLabel = document.createElement('span');
                         rankLabel.className = `absolute top-0.5 left-0.5 text-[10px] font-bold ${!isDark ? 'text-board-dark' : 'text-board-light'}`;
@@ -596,14 +782,12 @@
                         cell.appendChild(fileLabel);
                     }
 
-                    // Last Move Highlight
                     if (lastMove && (lastMove.from === squareId || lastMove.to === squareId)) {
                         const overlay = document.createElement('div');
                         overlay.className = "absolute inset-0 bg-yellow-200 opacity-40 mix-blend-multiply pointer-events-none";
                         cell.appendChild(overlay);
                     }
 
-                    // Move Hints
                     const isPossible = possibleMoves.includes(squareId);
                     if (isPossible) {
                         const hint = document.createElement('div');
@@ -611,7 +795,6 @@
                         cell.appendChild(hint);
                     }
 
-                    // Piece
                     if (piece) {
                         const img = document.createElement('img');
                         img.src = PIECE_IMAGES[`${piece.color}${piece.type}`];
@@ -678,7 +861,6 @@
             createImgs(capturedBlackEl, bCaps, 'b');
         }
 
-        // Start
         init();
     </script>
   <script type="module" src="/index.tsx"></script>
